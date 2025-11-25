@@ -96,11 +96,32 @@ python src/track_visualizer.py --dir ./data/augmented_tracks --mode augmented
 
 **Visualization modes:**
 - `both` (default) - Overlay original (x markers, faded) and augmented (circles, solid) cones
-- `original` - Show only the original cone positions
-- `augmented` - Show only the augmented cone positions
+- `original` - Show only the original cone positions (ground truth)
+- `augmented` - Show only the augmented cone positions (with removed cones filtered out)
 
-<!-- add screenshot here -->
-![Track Visualizer](./documentation/track_visualizer.png)
+### Examples
+
+<table>
+<tr>
+<td width="50%">
+<b>Original mode</b><br/>
+Ground truth with all cones
+<img src="./documentation/track_visualizer_original.png" alt="Track Visualizer Original"/>
+</td>
+<td width="50%">
+<b>Augmented mode</b><br/>
+Only valid augmented cones
+<img src="./documentation/track_visualizer_augmented.png" alt="Track Visualizer Augmented"/>
+</td>
+</tr>
+<tr>
+<td colspan="2" align="center">
+<b>Both mode</b><br/>
+Ground truth vs augmented
+<img src="./documentation/track_visualizer_both.png" alt="Track Visualizer Both"/>
+</td>
+</tr>
+</table>
 
 ---
 
