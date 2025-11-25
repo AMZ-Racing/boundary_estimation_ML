@@ -114,6 +114,24 @@ def generate_tracks_in_batch(directory, num_tracks):
         settings["seed"] = random.randint(
             constant_ranges["seed"]["min"], constant_ranges["seed"]["max"]
         )
+        #! TODO add more randomization in the track parameters.
+        #         default_cfg = { # Default settings for track generation -> possible TODO -> make these randomizable
+        #     "seed": random.random(),
+        #     "min_corner_radius": 3,
+        #     "max_frequency": 7,
+        #     "amplitude": 1 / 3,
+        #     "check_self_intersection": True,
+        #     "starting_amplitude": 0.4,
+        #     "rel_accuracy": 0.005,
+        #     "margin": 0,
+        #     "starting_straight_length": 6,
+        #     "starting_straight_downsample": 2,
+        #     "min_cone_spacing": 3 * math.pi / 16,
+        #     "max_cone_spacing": 5,
+        #     "track_width": 3,
+        #     "cone_spacing_bias": 0.5,
+        #     "starting_cone_spacing": 0.5,
+        # }
         TrackGenerator.write_to_csv(filename, *TrackGenerator(settings)(), overwrite=True)
         print(f"Track saved as: {filename}")
 

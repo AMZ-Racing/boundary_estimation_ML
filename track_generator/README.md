@@ -66,7 +66,8 @@ python src/track_generator_gui.py --dir <path-to-dir> --batch <number-of-tracks>
 
 ## 👀 Track Visualizer
 
-You can re-open and view saved tracks with the **visualizer tool**.
+You can re-open and view saved tracks with the **visualizer tool**.  
+The visualizer supports both regular and augmented tracks.
 
 Show all tracks in a directory:
 ```bash
@@ -75,9 +76,86 @@ python src/track_visualizer.py --dir <path-to-dir>
 
 Show a specific track:
 ```bash
-python src/track_visualizer.py --dir <path-to-dir> --track_name <track.csv>
+python src/track_visualizer.py --dir <path-to-dir> --track_name <track_name>
 ```
+
+### Visualizing Augmented Tracks
+
+For augmented tracks, you can choose what to display:
+
+```bash
+# Show both original and augmented cones (default)
+python src/track_visualizer.py --dir ./data/augmented_tracks --mode both
+
+# Show only original cones
+python src/track_visualizer.py --dir ./data/augmented_tracks --mode original
+
+# Show only augmented cones
+python src/track_visualizer.py --dir ./data/augmented_tracks --mode augmented
+```
+
+**Visualization modes:**
+- `both` (default) - Overlay original (x markers, faded) and augmented (circles, solid) cones
+- `original` - Show only the original cone positions
+- `augmented` - Show only the augmented cone positions
 
 <!-- add screenshot here -->
 ![Track Visualizer](./documentation/track_visualizer.png)
+
+---
+
+## 🔄 Track Augmentation
+
+Apply data augmentation to existing tracks for machine learning training.  
+The augmentation tool creates modified versions of tracks with:
+- **Random cone removal** - some cones are randomly removed
+- **Position noise** - cone positions are slightly randomized
+- **Color changes** - cone colors are randomly changed
+
+### Basic usage
+
+Augment all tracks in the default directory:
+```bash
+python src/track_augmentation.py
+```
+
+By default, this reads from `./data/generated_tracks` and saves to `./data/augmented_tracks`.
+
+### Custom directories
+
+Specify input and output directories:
+```bash
+python src/track_augmentation.py --input_dir <input-path> --output_dir <output-path>
+```
+
+### Augmentation parameters
+
+Control the augmentation behavior:
+```bash
+python src/track_augmentation.py \
+  --removal_prob 0.1 \
+  --position_noise 0.1 \
+  --color_change_prob 0.05 \
+  --seed 42
+```
+
+**Parameters:**
+- `--removal_prob` - Probability of removing each cone (default: 0.1 = 10%)
+- `--position_noise` - Standard deviation of position noise in meters (default: 0.1 = 10cm)
+- `--color_change_prob` - Probability of changing cone color (default: 0.05 = 5%)
+- `--seed` - Random seed for reproducibility (optional)
+
+### Output format
+
+Augmented tracks are saved as CSV files with both original and augmented data:
+```
+tag,x,y,aug_tag,aug_x,aug_y,is_valid
+```
+
+Where:
+- `tag`, `x`, `y` - Original cone data (ground truth)
+- `aug_tag`, `aug_x`, `aug_y` - Augmented cone data
+- `is_valid` - Boolean flag indicating if the cone is present (True) or removed (False)
+
+The `is_valid` field allows you to simulate cone detection failures while keeping the ground truth data for comparison. When visualizing with the track visualizer, only valid cones are shown in the augmented view, while all cones are shown in the original (ground truth) view.
 
