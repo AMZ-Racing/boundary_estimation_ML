@@ -39,13 +39,13 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
     # Data structures for original cones
     blue_cones = []
     yellow_cones = []
-    black_cones = []
+    blank_cones = []
     orange_cones = []
 
     # Data structures for augmented cones
     aug_blue_cones = []
     aug_yellow_cones = []
-    aug_black_cones = []
+    aug_blank_cones = []
     aug_orange_cones = []
 
     # Read CSV file
@@ -61,7 +61,7 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
                 elif tag == "yellow":
                     yellow_cones.append([x, y])
                 elif tag == "blank":
-                    black_cones.append([x, y])
+                    blank_cones.append([x, y])
                 else:  # orange, big_orange, etc.
                     orange_cones.append([x, y])
 
@@ -77,7 +77,7 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
                     elif aug_tag == "yellow":
                         aug_yellow_cones.append([aug_x, aug_y])
                     elif aug_tag == "blank":
-                        aug_black_cones.append([aug_x, aug_y])
+                        aug_blank_cones.append([aug_x, aug_y])
                     else:  # orange, big_orange, etc.
                         aug_orange_cones.append([aug_x, aug_y])
 
@@ -88,12 +88,12 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
     blue_cones = to_array(blue_cones)
     yellow_cones = to_array(yellow_cones)
     orange_cones = to_array(orange_cones)
-    black_cones = to_array(black_cones)
+    blank_cones = to_array(blank_cones)
 
     aug_blue_cones = to_array(aug_blue_cones)
     aug_yellow_cones = to_array(aug_yellow_cones)
     aug_orange_cones = to_array(aug_orange_cones)
-    aug_black_cones = to_array(aug_black_cones)
+    aug_blank_cones = to_array(aug_blank_cones)
 
     # Plot the track
     plt.figure(figsize=(12, 12))
@@ -140,11 +140,11 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
                 label=f"{label_prefix}Yellow Cones",
             )
 
-        if len(black_cones) > 0:
+        if len(blank_cones) > 0:
             plt.scatter(
-                black_cones[:, 0],
-                black_cones[:, 1],
-                c="black",
+                blank_cones[:, 0],
+                blank_cones[:, 1],
+                c="red",
                 s=size,
                 alpha=alpha,
                 marker=marker,
@@ -192,11 +192,11 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
                 label=f"{label_prefix}Yellow Cones",
             )
 
-        if len(aug_black_cones) > 0:
+        if len(aug_blank_cones) > 0:
             plt.scatter(
-                aug_black_cones[:, 0],
-                aug_black_cones[:, 1],
-                c="black",
+                aug_blank_cones[:, 0],
+                aug_blank_cones[:, 1],
+                c="red",
                 s=size,
                 alpha=alpha,
                 marker=marker,
