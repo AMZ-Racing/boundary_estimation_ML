@@ -91,6 +91,30 @@ class TrackAugmentation:
         augmented_df = pd.DataFrame(augmented_rows)
         augmented_df.to_csv(output_csv_path, index=False)
 
+        # Also save a numpy (.npy) file with the same stem next to the CSV
+        out_path = Path(output_csv_path)
+        if len(augmented_df) > 0:
+            dtype = np.dtype([
+                ("tag", "U16"),
+                ("x", float),
+                ("y", float),
+                ("aug_tag", "U16"),
+                ("aug_x", float),
+                ("aug_y", float),
+                ("is_valid", bool),
+            ])
+            arr = np.zeros(len(augmented_df), dtype=dtype)
+            arr["tag"] = augmented_df["tag"].astype(str).values
+            arr["x"] = augmented_df["x"].astype(float).values
+            arr["y"] = augmented_df["y"].astype(float).values
+            arr["aug_tag"] = augmented_df["aug_tag"].astype(str).values
+            arr["aug_x"] = augmented_df["aug_x"].astype(float).values
+            arr["aug_y"] = augmented_df["aug_y"].astype(float).values
+            arr["is_valid"] = augmented_df["is_valid"].astype(bool).values
+
+            npy_path = out_path.with_suffix(".npy")
+            np.save(npy_path, arr)
+
         num_valid = augmented_df["is_valid"].sum()
         num_removed = len(augmented_df) - num_valid
         print(
