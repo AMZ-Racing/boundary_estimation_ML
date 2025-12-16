@@ -3,6 +3,7 @@ import math
 import cmath
 import numpy as np
 from os.path import exists
+from pathlib import Path
 
 
 class TrackGenerator:
@@ -448,19 +449,30 @@ class TrackGenerator:
 
     @staticmethod
     def write_to_csv(file_path, start_cones, l_cones, r_cones, overwrite=False):
-        if not overwrite and exists(file_path):
+        path = Path(file_path)
+        if not overwrite and path.exists():
             raise FileExistsError(f"'{file_path}' already exists")
 
-        f = open(file_path, "w")
-        f.write("tag,x,y\n")
-        for cone in l_cones:
-            f.write(f"blue,{cone.real:0.2f},{cone.imag:0.2f}\n")
-        for cone in r_cones:
-            f.write(f"yellow,{cone.real:0.2f},{cone.imag:0.2f}\n")
+        rows = []
+        with open(path, "w") as f:
+            f.write("tag,x,y\n")
+            for cone in l_cones:
+                f.write(f"blue,{cone.real:0.2f},{cone.imag:0.2f}\n")
+                rows.append(("blue", float(f"{cone.real:0.2f}"), float(f"{cone.imag:0.2f}")))
+            for cone in r_cones:
+                f.write(f"yellow,{cone.real:0.2f},{cone.imag:0.2f}\n")
+                rows.append(("yellow", float(f"{cone.real:0.2f}"), float(f"{cone.imag:0.2f}")))
 
-        for cone in start_cones:
-            f.write(f"big_orange,{cone.real:0.2f},{cone.imag:0.2f}\n")
-        f.close()
+            for cone in start_cones:
+                f.write(f"big_orange,{cone.real:0.2f},{cone.imag:0.2f}\n")
+                rows.append(("big_orange", float(f"{cone.real:0.2f}"), float(f"{cone.imag:0.2f}")))
+
+        # Save numpy representation next to the CSV (same stem, .npy)
+        if rows:
+            dtype = np.dtype([("tag", "U16"), ("x", float), ("y", float)])
+            arr = np.array(rows, dtype=dtype)
+            npy_path = path.with_suffix(".npy")
+            np.save(npy_path, arr)
 
     def set(self, properties):
         self.config = {**self.config, **properties}
