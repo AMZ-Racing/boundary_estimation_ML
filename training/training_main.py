@@ -15,23 +15,24 @@ from torch.utils.data import Dataset, DataLoader
 from set_transformer import SetTransformerClassifier
 from val import validate
 
+from models.wrapper import ModelWrapper
 
-# class NPZPointDataset(Dataset):
-#     def __init__(self, root_dir: str):
-#         self.root_dir = root_dir
-#         files = sorted(glob.glob(os.path.join(root_dir, "*.npz")))
-#         if len(files) == 0:
-#             raise ValueError(f"No .npz files found in {root_dir}")
-#         self.files = files
+class NPZPointDataset(Dataset):
+    def __init__(self, root_dir: str):
+        self.root_dir = root_dir
+        files = sorted(glob.glob(os.path.join(root_dir, "*.npz")))
+        if len(files) == 0:
+            raise ValueError(f"No .npz files found in {root_dir}")
+        self.files = files
 
-#     def __len__(self):
-#         return len(self.files)
+    def __len__(self):
+        return len(self.files)
 
-#     def __getitem__(self, idx: int):
-#         data = np.load(self.files[idx])
-#         pts = data['points'].astype(np.float32)  # (N,2)
-#         labels = data['labels'].astype(np.int64)  # (N,)
-#         return pts, labels
+    def __getitem__(self, idx: int):
+        data = np.load(self.files[idx])
+        pts = data['points'].astype(np.float32)  # (N,2)
+        labels = data['labels'].astype(np.int64)  # (N,)
+        return pts, labels
 
 
 def collate_fn(batch: List[Tuple[np.ndarray, np.ndarray]], max_points: int = None):
@@ -69,15 +70,24 @@ def train(args):
     val_loader = DataLoader(val_ds, batch_size=args.val_batch_size, shuffle=False,
                             collate_fn=lambda b: collate_fn(b, max_points=args.max_points), num_workers=2)
 
-    model = SetTransformerClassifier(
-        dim_input=2,
-        d_model=args.d_model,
-        nhead=args.nhead,
-        num_encoder_layers=args.num_layers,
-        dim_feedforward=args.dim_feedforward,
-        dropout=args.dropout,
-        num_classes=args.num_classes
+    model = ModelWrapper(
+        model_name=args.model,     # e.g. "set_transformer"
+        input_dim=2,
+        d_model=128,
+        nhead=8,
+        num_layers=4,
+        num_classes=5
     ).to(device)
+
+    # model = SetTransformerClassifier(
+    #     dim_input=2,
+    #     d_model=args.d_model,
+    #     nhead=args.nhead,
+    #     num_encoder_layers=args.num_layers,
+    #     dim_feedforward=args.dim_feedforward,
+    #     dropout=args.dropout,
+    #     num_classes=args.num_classes
+    # ).to(device)
 
     criterion = nn.CrossEntropyLoss(ignore_index=-100)  # pads have label -100
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -182,7 +192,12 @@ def parse_args():
     p.add_argument("--num_classes", type=int,               default=5)
     p.add_argument("--id_left", type=int,                   default=0)
     p.add_argument("--id_right", type=int,                  default=1)
-
+    
+    
+    
+    p.add_argument("--model", type=str,                     default="mlp",
+                    choices=["set_transformer", "mlp", "transformer"])
+    
     return p.parse_args()
 
 
