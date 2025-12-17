@@ -1,0 +1,16 @@
+{"tag": {
+    "big_orange": 0,
+    "blue": 1,
+    "yellow": 2
+    },
+ "aug_tag": {
+    "big_orange": 0,
+    "blank": 1,
+    "blue": 2,
+    "yellow": 3
+    },
+ "is_valid": {
+    "np.False_": 0, 
+    "np.True_": 1
+    }
+}

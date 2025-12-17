@@ -16,59 +16,17 @@ from set_transformer import SetTransformerClassifier
 from val import validate
 
 from models.wrapper import ModelWrapper
+from dataset.pandas_tracks_set import get_dataloader
 
-class NPZPointDataset(Dataset):
-    def __init__(self, root_dir: str):
-        self.root_dir = root_dir
-        files = sorted(glob.glob(os.path.join(root_dir, "*.npz")))
-        if len(files) == 0:
-            raise ValueError(f"No .npz files found in {root_dir}")
-        self.files = files
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, idx: int):
-        data = np.load(self.files[idx])
-        pts = data['points'].astype(np.float32)  # (N,2)
-        labels = data['labels'].astype(np.int64)  # (N,)
-        return pts, labels
-
-
-def collate_fn(batch: List[Tuple[np.ndarray, np.ndarray]], max_points: int = None):
-    lengths = [b[0].shape[0] for b in batch]
-    if max_points is None:
-        Nmax = max(lengths)
-    else:
-        Nmax = min(max(lengths), max_points)
-
-    B = len(batch)
-    points = np.zeros((B, Nmax, 2), dtype=np.float32)
-    labels = np.full((B, Nmax), fill_value=-100, dtype=np.int64)  # -100 = ignore_index
-    mask = np.ones((B, Nmax), dtype=bool)  # True = PAD
-
-    for i, (pts, labs) in enumerate(batch):
-        n = min(pts.shape[0], Nmax)
-        points[i, :n] = pts[:n]
-        labels[i, :n] = labs[:n]
-        mask[i, :n] = False  # not pad
-
-    points = torch.from_numpy(points)
-    labels = torch.from_numpy(labels)
-    mask = torch.from_numpy(mask)  # bool
-    return points, labels, mask, lengths
+from utils.logging_utils import TensorboardLogger
 
 def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Device:", device)
 
-    train_ds = NPZPointDataset(args.train_dir)
-    val_ds = NPZPointDataset(args.val_dir)
-
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
-                              collate_fn=lambda b: collate_fn(b, max_points=args.max_points), num_workers=2)
-    val_loader = DataLoader(val_ds, batch_size=args.val_batch_size, shuffle=False,
-                            collate_fn=lambda b: collate_fn(b, max_points=args.max_points), num_workers=2)
+    logger = TensorboardLogger(log_dir=args.checkpoint_dir)
+    train_loader = get_dataloader()
+    val_loader = get_dataloader()
 
     model = ModelWrapper(
         model_name=args.model,     # e.g. "set_transformer"
@@ -79,15 +37,6 @@ def train(args):
         num_classes=5
     ).to(device)
 
-    # model = SetTransformerClassifier(
-    #     dim_input=2,
-    #     d_model=args.d_model,
-    #     nhead=args.nhead,
-    #     num_encoder_layers=args.num_layers,
-    #     dim_feedforward=args.dim_feedforward,
-    #     dropout=args.dropout,
-    #     num_classes=args.num_classes
-    # ).to(device)
 
     criterion = nn.CrossEntropyLoss(ignore_index=-100)  # pads have label -100
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -121,6 +70,7 @@ def train(args):
 
             if global_step % args.print_every == 0:
                 # TODO: add tensorboard logging
+                logger.log_train_loss(loss.item(), global_step)
                 print(f"[Epoch {epoch} Step {global_step}] loss={loss.item():.4f}")
 
         scheduler.step()
@@ -156,7 +106,8 @@ def train(args):
                 "args": vars(args)
             }, best_path)
             print(f"Saved new best model (macro_f1={best_val:.4f}) -> {best_path}")
-
+    
+    logger.close()
     print("Training complete. Best macro_f1:", best_val)
 
 
