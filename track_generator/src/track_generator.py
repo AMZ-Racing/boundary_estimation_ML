@@ -24,6 +24,7 @@ class TrackGenerator:
             "track_width": 3,
             "cone_spacing_bias": 0.5,
             "starting_cone_spacing": 0.5,
+            "track_type": "closed",  # Options: "closed", "open", "straight"
         }
         self.config = {**default_cfg, **config}
 
@@ -358,6 +359,7 @@ class TrackGenerator:
         cone_spacing_bias,
         start_offset,
         starting_cone_spacing,
+        track_type="closed",
     ):
         """
         Generates starting, left and right cone locations from track path
@@ -398,16 +400,24 @@ class TrackGenerator:
             )
         )
 
-        def place(points, radii, side):
-            distance_to_next = abs(np.append(np.diff(points), points[0] - points[-1]))
+        def place(points, radii, side, is_closed=True):
+            if is_closed:
+                distance_to_next = abs(np.append(np.diff(points), points[0] - points[-1]))
+            else:
+                distance_to_next = abs(np.diff(points))
+                distance_to_next = np.append(distance_to_next, distance_to_next[-1])
+            
             distance_to_prev = np.roll(distance_to_next, 1)
 
             cone_density = min_density + side * c1 / radii + c2 / abs(radii)
             cone_density *= distance_to_prev
 
-            # scale cone spacing to make the first and last cones match up
+            # scale cone spacing
             modified_length = sum(cone_density)
-            threshold = modified_length / round(modified_length)
+            if is_closed:
+                threshold = modified_length / round(modified_length)
+            else:
+                threshold = modified_length / (round(modified_length) + 1)
 
             cones = [points[0]]
             current = 0
@@ -418,14 +428,25 @@ class TrackGenerator:
                     cones.append(points[i])
             return np.array(cones)
 
-        l_cones = place(positions + normals * track_width / 2, corner_radii - track_width / 2, 1)
-        r_cones = place(positions - normals * track_width / 2, corner_radii + track_width / 2, -1)
+        is_closed = track_type == "closed"
+        
+        l_cones = place(positions + normals * track_width / 2, corner_radii - track_width / 2, 1, is_closed)
+        r_cones = place(positions - normals * track_width / 2, corner_radii + track_width / 2, -1, is_closed)
 
         start_cones = np.array([l_cones[0], r_cones[0]])
         start_cones = np.append(
             start_cones + starting_cone_spacing / 2,
             start_cones - starting_cone_spacing / 2,
         )
+        
+        # For open tracks, add finish line cones at the end
+        if not is_closed and len(l_cones) > 0 and len(r_cones) > 0:
+            finish_cones = np.array([l_cones[-1], r_cones[-1]])
+            finish_cones = np.append(
+                finish_cones + starting_cone_spacing / 2,
+                finish_cones - starting_cone_spacing / 2,
+            )
+            start_cones = np.append(start_cones, finish_cones)
 
         # put car start_offset behind the starting line
         car_pos = 0
@@ -474,6 +495,54 @@ class TrackGenerator:
             npy_path = path.with_suffix(".npy")
             np.save(npy_path, arr)
 
+    @staticmethod
+    def write_to_csv_with_augmentation(
+        file_path,
+        start_cones,
+        l_cones,
+        r_cones,
+        overwrite=False,
+        augmentation_config=None,
+    ):
+        """Write track to CSV and also generate augmented version.
+        
+        Args:
+            file_path: Path for the original track CSV
+            start_cones, l_cones, r_cones: Cone arrays
+            overwrite: Whether to overwrite existing files
+            augmentation_config: Dict with augmentation parameters (removal_prob, position_noise_std, color_change_prob)
+        """
+        # Write original track
+        TrackGenerator.write_to_csv(file_path, start_cones, l_cones, r_cones, overwrite)
+        
+        # Import here to avoid circular dependency
+        import sys
+        from pathlib import Path as PathLib
+        sys.path.insert(0, str(PathLib(__file__).parent))
+        from track_augmentation import TrackAugmentation
+        
+        # Default augmentation config
+        default_aug_config = {
+            "removal_prob": 0.1,
+            "position_noise_std": 0.1,
+            "color_change_prob": 0.05,
+            "seed": None,
+        }
+        
+        if augmentation_config:
+            default_aug_config.update(augmentation_config)
+        
+        # Create augmented version path
+        path = Path(file_path)
+        aug_path = path.parent.parent / "augmented_tracks" / path.name
+        aug_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Generate augmented track
+        augmenter = TrackAugmentation(default_aug_config)
+        augmenter.augment_track(path, aug_path)
+        
+        return str(aug_path)
+
     def set(self, properties):
         self.config = {**self.config, **properties}
 
@@ -482,38 +551,98 @@ class TrackGenerator:
 
     def __call__(self):
         margin = self.config["track_width"] / 2 + self.config["margin"]
-        if "length" in self.config:
-            path = TrackGenerator.generate_path_w_length(
-                rng=self.rng,
-                n_points=self.config["resolution"],
-                min_corner_radius=self.config["min_corner_radius"],
-                margin=margin,
-                target_track_length=self.config["length"],
-                rel_accuracy=self.config["rel_accuracy"],
-                starting_amplitude=self.config["starting_amplitude"],
-            )
-        elif "max_frequency" in self.config:
-            while True:
-                path = TrackGenerator.generate_path_w_params(
+        track_type = self.config.get("track_type", "closed")
+        
+        # Generate straight track
+        if track_type == "straight":
+            length = self.config.get("length", 100)
+            n_points = max(50, int(length / 2))
+            
+            # Create straight line positions
+            t = np.linspace(0, length, n_points)
+            positions = t + 0j  # Complex numbers with zero imaginary part
+            normals = np.ones(n_points, dtype=complex) * 1j  # Pointing up
+            corner_radii = np.ones(n_points) * 1e6  # Very large radius (straight)
+            
+            path = (positions, normals, corner_radii)
+        
+        # Generate open track (take half of a closed track)
+        elif track_type == "open":
+            if "length" in self.config:
+                path = TrackGenerator.generate_path_w_length(
                     rng=self.rng,
                     n_points=self.config["resolution"],
                     min_corner_radius=self.config["min_corner_radius"],
-                    max_frequency=self.config["max_frequency"],
-                    amplitude=self.config["amplitude"],
+                    margin=margin,
+                    target_track_length=self.config["length"] * 2,  # Generate longer, will cut in half
+                    rel_accuracy=self.config["rel_accuracy"],
+                    starting_amplitude=self.config["starting_amplitude"],
                 )
-                if not (
-                    self.config["check_self_intersection"]
-                    and TrackGenerator.self_intersects(*path[:2], margin)
-                ):
-                    break
+            elif "max_frequency" in self.config:
+                while True:
+                    path = TrackGenerator.generate_path_w_params(
+                        rng=self.rng,
+                        n_points=self.config["resolution"],
+                        min_corner_radius=self.config["min_corner_radius"],
+                        max_frequency=self.config["max_frequency"],
+                        amplitude=self.config["amplitude"],
+                    )
+                    if not (
+                        self.config["check_self_intersection"]
+                        and TrackGenerator.self_intersects(*path[:2], margin)
+                    ):
+                        break
+            else:
+                raise KeyError("missing one of required properties length or max_frequency")
+            
+            # Take only first half of the track to make it open
+            half_idx = len(path[0]) // 2
+            path = (path[0][:half_idx], path[1][:half_idx], path[2][:half_idx])
+        
+        # Generate closed track (default)
         else:
-            raise KeyError("missing one of required properties length or max_frequency")
+            if "length" in self.config:
+                path = TrackGenerator.generate_path_w_length(
+                    rng=self.rng,
+                    n_points=self.config["resolution"],
+                    min_corner_radius=self.config["min_corner_radius"],
+                    margin=margin,
+                    target_track_length=self.config["length"],
+                    rel_accuracy=self.config["rel_accuracy"],
+                    starting_amplitude=self.config["starting_amplitude"],
+                )
+            elif "max_frequency" in self.config:
+                while True:
+                    path = TrackGenerator.generate_path_w_params(
+                        rng=self.rng,
+                        n_points=self.config["resolution"],
+                        min_corner_radius=self.config["min_corner_radius"],
+                        max_frequency=self.config["max_frequency"],
+                        amplitude=self.config["amplitude"],
+                    )
+                    if not (
+                        self.config["check_self_intersection"]
+                        and TrackGenerator.self_intersects(*path[:2], margin)
+                    ):
+                        break
+            else:
+                raise KeyError("missing one of required properties length or max_frequency")
 
-        path = TrackGenerator.pick_starting_point(
-            *path,
-            starting_straight_length=self.config["starting_straight_length"],
-            downsample=self.config["starting_straight_downsample"],
-        )
+        # For closed tracks, pick optimal starting point
+        if track_type == "closed":
+            path = TrackGenerator.pick_starting_point(
+                *path,
+                starting_straight_length=self.config["starting_straight_length"],
+                downsample=self.config["starting_straight_downsample"],
+            )
+        # For open/straight tracks, ensure starting position is at 0,0 facing right
+        else:
+            positions, normals, corner_radii = path
+            positions -= positions[0]
+            rotation = 1j / normals[0]
+            positions *= rotation
+            normals *= rotation
+            path = (positions, normals, corner_radii)
 
         return TrackGenerator.place_cones(
             *path,
@@ -524,4 +653,5 @@ class TrackGenerator:
             cone_spacing_bias=self.config["cone_spacing_bias"],
             start_offset=self.config["starting_straight_length"],
             starting_cone_spacing=self.config["starting_cone_spacing"],
+            track_type=track_type,
         )

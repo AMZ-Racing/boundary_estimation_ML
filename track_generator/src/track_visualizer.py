@@ -47,6 +47,7 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
     aug_yellow_cones = []
     aug_blank_cones = []
     aug_orange_cones = []
+    aug_false_positives = []  # List of tuples: [(x, y, color), ...]
 
     # Read CSV file
     with open(csv_file, "r") as file:
@@ -55,31 +56,41 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
             # Original data (ground truth)
             if mode in ["original", "both"]:
                 tag = row["tag"]
-                x, y = float(row["x"]), float(row["y"])
-                if tag == "blue":
-                    blue_cones.append([x, y])
-                elif tag == "yellow":
-                    yellow_cones.append([x, y])
-                elif tag == "blank":
-                    blank_cones.append([x, y])
-                else:  # orange, big_orange, etc.
-                    orange_cones.append([x, y])
-
-            # Augmented data - only plot valid cones
-            if is_augmented and mode in ["augmented", "both"]:
-                # Check if cone is valid (not removed)
-                is_valid = row.get("is_valid", "True")
-                if is_valid in ["True", "true", "1", True, 1]:
-                    aug_tag = row["aug_tag"]
-                    aug_x, aug_y = float(row["aug_x"]), float(row["aug_y"])
-                    if aug_tag == "blue":
-                        aug_blue_cones.append([aug_x, aug_y])
-                    elif aug_tag == "yellow":
-                        aug_yellow_cones.append([aug_x, aug_y])
-                    elif aug_tag == "blank":
-                        aug_blank_cones.append([aug_x, aug_y])
+                # Skip false positives in original view (don't plot X marker)
+                if tag != "false_positive":
+                    x, y = float(row["x"]), float(row["y"])
+                    if tag == "blue":
+                        blue_cones.append([x, y])
+                    elif tag == "yellow":
+                        yellow_cones.append([x, y])
+                    elif tag == "blank":
+                        blank_cones.append([x, y])
                     else:  # orange, big_orange, etc.
-                        aug_orange_cones.append([aug_x, aug_y])
+                        orange_cones.append([x, y])
+
+            # Augmented data - only plot valid cones and false positives
+            if is_augmented and mode in ["augmented", "both"]:
+                tag = row["tag"]
+                
+                # Handle false positives separately
+                if tag == "false_positive":
+                    aug_x, aug_y = float(row["aug_x"]), float(row["aug_y"])
+                    aug_tag = row["aug_tag"]
+                    aug_false_positives.append([aug_x, aug_y, aug_tag])
+                else:
+                    # Only plot detected cones (not removed)
+                    detected = row.get("detected", "True")
+                    if detected in ["True", "true", "1", True, 1]:
+                        aug_tag = row["aug_tag"]
+                        aug_x, aug_y = float(row["aug_x"]), float(row["aug_y"])
+                        if aug_tag == "blue":
+                            aug_blue_cones.append([aug_x, aug_y])
+                        elif aug_tag == "yellow":
+                            aug_yellow_cones.append([aug_x, aug_y])
+                        elif aug_tag == "blank":
+                            aug_blank_cones.append([aug_x, aug_y])
+                        else:  # orange, big_orange, etc.
+                            aug_orange_cones.append([aug_x, aug_y])
 
     # Convert lists to numpy arrays if cones exist
     def to_array(cone_list):
@@ -94,6 +105,7 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
     aug_yellow_cones = to_array(aug_yellow_cones)
     aug_orange_cones = to_array(aug_orange_cones)
     aug_blank_cones = to_array(aug_blank_cones)
+    # Keep false positives as list to preserve color information
 
     # Plot the track
     plt.figure(figsize=(12, 12))
@@ -196,12 +208,42 @@ def plot_track_from_csv(csv_file, track_name, mode="both"):
             plt.scatter(
                 aug_blank_cones[:, 0],
                 aug_blank_cones[:, 1],
-                c="red",
+                c="white",
                 s=size,
                 alpha=alpha,
                 marker=marker,
-                label=f"{label_prefix}False Positives",
+                edgecolors="black",
+                label=f"{label_prefix}Blank Cones",
             )
+        
+        # Plot false positives with colored fill and red border
+        if len(aug_false_positives) > 0:
+            # Map color names to actual colors
+            color_map = {
+                "blue": "blue",
+                "yellow": "yellow",
+                "big_orange": "orange",
+                "orange": "orange",
+                "blank": "white"
+            }
+            
+            for fp_x, fp_y, fp_color in aug_false_positives:
+                fill_color = color_map.get(fp_color, "gray")
+                plt.scatter(
+                    fp_x,
+                    fp_y,
+                    c=fill_color,
+                    s=size,
+                    alpha=1.0,  # Full opacity for false positives
+                    marker="o",
+                    edgecolors="red",
+                    linewidths=2,
+                    zorder=10,  # Draw on top of other markers
+                )
+            
+            # Add single legend entry for all false positives
+            plt.scatter([], [], c="gray", s=size, alpha=1.0, marker="o", 
+                       edgecolors="red", linewidths=2, label=f"{label_prefix}False Positives")
 
     # Set axis labels and title
     plt.xlabel("X [m]")

@@ -19,6 +19,8 @@ from PyQt5.QtWidgets import (
     QLabel,
     QFileDialog,
     QSplitter,
+    QComboBox,
+    QCheckBox,
 )
 from PyQt5.QtGui import QBrush, QPainter, QPen, QColor
 from track_generator import TrackGenerator
@@ -48,6 +50,15 @@ settings = {
     "track_width": 3,
     "cone_spacing_bias": 0.5,
     "starting_cone_spacing": 0.5,
+    "track_type": "closed",
+    "auto_augment": True,
+    "augmentation": {
+        "removal_prob": 0.1,
+        "position_noise_std": 0.1,
+        "color_change_prob": 0.05,
+        "false_positive_prob": 0.025,
+        "false_positive_distance": (2.0, 8.0),
+    },
 }
 
 ranges = {
@@ -107,33 +118,25 @@ def get_incremental_filename(directory, base_name="track", extension="csv"):
 # Batch generation function
 
 
-def generate_tracks_in_batch(directory, num_tracks):
+def generate_tracks_in_batch(directory, num_tracks, auto_augment=True):
     for _ in range(num_tracks):
         filename = get_incremental_filename(directory)
         # generate random settings
         settings["seed"] = random.randint(
             constant_ranges["seed"]["min"], constant_ranges["seed"]["max"]
         )
-        #! TODO add more randomization in the track parameters.
-        #         default_cfg = { # Default settings for track generation -> possible TODO -> make these randomizable
-        #     "seed": random.random(),
-        #     "min_corner_radius": 3,
-        #     "max_frequency": 7,
-        #     "amplitude": 1 / 3,
-        #     "check_self_intersection": True,
-        #     "starting_amplitude": 0.4,
-        #     "rel_accuracy": 0.005,
-        #     "margin": 0,
-        #     "starting_straight_length": 6,
-        #     "starting_straight_downsample": 2,
-        #     "min_cone_spacing": 3 * math.pi / 16,
-        #     "max_cone_spacing": 5,
-        #     "track_width": 3,
-        #     "cone_spacing_bias": 0.5,
-        #     "starting_cone_spacing": 0.5,
-        # }
-        TrackGenerator.write_to_csv(filename, *TrackGenerator(settings)(), overwrite=True)
-        print(f"Track saved as: {filename}")
+        track_data = TrackGenerator(settings)()
+        
+        if auto_augment:
+            aug_path = TrackGenerator.write_to_csv_with_augmentation(
+                filename, *track_data, overwrite=True,
+                augmentation_config=settings.get("augmentation")
+            )
+            print(f"Track saved as: {filename}")
+            print(f"Augmented track saved as: {aug_path}")
+        else:
+            TrackGenerator.write_to_csv(filename, *track_data, overwrite=True)
+            print(f"Track saved as: {filename}")
 
 
 class TrackControls(QWidget):
@@ -159,7 +162,23 @@ class TrackControls(QWidget):
             "track_width": QDoubleSpinBox(),
             "cone_spacing_bias": QDoubleSpinBox(),
             "starting_cone_spacing": QDoubleSpinBox(),
+            "track_type": QComboBox(),
+            "auto_augment": QCheckBox(),
+            "batch_size": QSpinBox(),
         }
+        
+        # Setup track_type combo box
+        controls["track_type"].addItems(["closed", "open", "straight"])
+        controls["track_type"].setCurrentText("closed")
+        
+        # Setup auto_augment checkbox
+        controls["auto_augment"].setChecked(settings.get("auto_augment", True))
+        controls["auto_augment"].setText("Generate augmented version")
+        
+        # Setup batch_size spinbox
+        controls["batch_size"].setMinimum(1)
+        controls["batch_size"].setMaximum(1000)
+        controls["batch_size"].setValue(1)
 
         for ctrl in constant_ranges:
             if "min" in constant_ranges[ctrl]:
@@ -195,10 +214,25 @@ class TrackControls(QWidget):
                 self.parent_gui.redraw_track()
 
             return callback
+        
+        def on_track_type_changed(value):
+            settings["track_type"] = value
+            self.parent_gui.redraw_track()
+        
+        def on_auto_augment_changed(state):
+            settings["auto_augment"] = bool(state)
 
         for ctrl in controls:
-            controls[ctrl].setValue(settings[ctrl])
-            controls[ctrl].valueChanged.connect(on_value_changed(ctrl))
+            if ctrl == "track_type":
+                controls[ctrl].currentTextChanged.connect(on_track_type_changed)
+            elif ctrl == "auto_augment":
+                controls[ctrl].stateChanged.connect(on_auto_augment_changed)
+            elif ctrl == "batch_size":
+                # batch_size doesn't affect track generation, skip
+                pass
+            else:
+                controls[ctrl].setValue(settings[ctrl])
+                controls[ctrl].valueChanged.connect(on_value_changed(ctrl))
 
         # Add some controls and default settings
         controls["seed"].setValue(random.randint(0, 10000))
@@ -240,6 +274,8 @@ class TrackControls(QWidget):
         seed_layout.addWidget(randomize_seed_btn)
 
         group.addRow(QLabel("Seed"), g)
+        group.addRow(QLabel("Track Type"), controls["track_type"])
+        group.addRow(QLabel("Batch Size"), controls["batch_size"])
         group.addRow(QLabel("Length"), controls["length"])
         group.addRow(QLabel("Min Turn Radius"), controls["min_corner_radius"])
         group.addRow(QLabel("Margin"), controls["margin"])
@@ -258,9 +294,46 @@ class TrackControls(QWidget):
         save_btn = QPushButton("Save")
 
         def save_track():
-            filename = get_incremental_filename(self.save_dir, base_name="track", extension="csv")
-            TrackGenerator.write_to_csv(filename, *TrackGenerator(settings)(), overwrite=True)
-            print(f"Track saved to {filename}")
+            batch_size = controls["batch_size"].value()
+            
+            if batch_size == 1:
+                # Single track generation
+                filename = get_incremental_filename(self.save_dir, base_name="track", extension="csv")
+                track_data = TrackGenerator(settings)()
+                
+                if settings.get("auto_augment", False):
+                    aug_path = TrackGenerator.write_to_csv_with_augmentation(
+                        filename, *track_data, overwrite=True,
+                        augmentation_config=settings.get("augmentation")
+                    )
+                    print(f"Track saved to {filename}")
+                    print(f"Augmented track saved to {aug_path}")
+                else:
+                    TrackGenerator.write_to_csv(filename, *track_data, overwrite=True)
+                    print(f"Track saved to {filename}")
+            else:
+                # Batch generation with current GUI settings
+                print(f"Generating {batch_size} tracks in batch mode...")
+                for i in range(batch_size):
+                    # Randomize seed for each track but keep other settings
+                    current_settings = settings.copy()
+                    current_settings["seed"] = random.randint(0, 10000)
+                    
+                    filename = get_incremental_filename(self.save_dir, base_name="track", extension="csv")
+                    track_data = TrackGenerator(current_settings)()
+                    
+                    if settings.get("auto_augment", False):
+                        aug_path = TrackGenerator.write_to_csv_with_augmentation(
+                            filename, *track_data, overwrite=True,
+                            augmentation_config=settings.get("augmentation")
+                        )
+                        print(f"Track {i+1}/{batch_size} saved to {filename}")
+                        print(f"Augmented track saved to {aug_path}")
+                    else:
+                        TrackGenerator.write_to_csv(filename, *track_data, overwrite=True)
+                        print(f"Track {i+1}/{batch_size} saved to {filename}")
+                
+                print(f"Batch generation complete: {batch_size} tracks generated")
 
         save_btn.clicked.connect(save_track)
 
@@ -270,6 +343,7 @@ class TrackControls(QWidget):
 
         layout.addWidget(generation_group)
         layout.addWidget(cone_placement_group)
+        layout.addWidget(controls["auto_augment"])
         layout.addWidget(save_btn)
 
 
@@ -397,7 +471,7 @@ def main():
     if args.batch:
         # Batch mode: Generate multiple tracks
         print(f"Generating {args.batch} tracks in batch mode...")
-        generate_tracks_in_batch(args.dir, args.batch)
+        generate_tracks_in_batch(args.dir, args.batch, auto_augment=settings.get("auto_augment", True))
     else:
         app = QApplication(sys.argv)
         gui = EUFSTracksGUI(args.dir)

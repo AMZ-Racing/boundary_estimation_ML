@@ -37,12 +37,19 @@ python src/track_generator_gui.py
 
 ### ✨ Features
 - Adjust track parameters with sliders  
+- **Select track type**: closed circuit, open track, or straight line
+- **Auto-augmentation**: automatically generate augmented version with each track
 - Click **Randomize** to generate a new random track  
-- Save tracks to CSV with the **Save** button  
+- Save tracks to CSV (and NPY) with the **Save** button  
 
 By default, tracks are saved to:
 ```
 ./data/generated_tracks
+```
+
+When auto-augmentation is enabled, augmented tracks are saved to:
+```
+./data/augmented_tracks
 ```
 
 You can change the save directory with:
@@ -61,6 +68,8 @@ Example:
 ```bash
 python src/track_generator_gui.py --dir <path-to-dir> --batch <number-of-tracks>
 ```
+
+**Auto-augmentation is enabled by default** in batch mode, generating both original and augmented versions automatically.
 
 ---
 
