@@ -56,8 +56,9 @@ settings = {
         "removal_prob": 0.1,
         "position_noise_std": 0.1,
         "color_change_prob": 0.05,
-        "false_positive_prob": 0.025,
+        "false_positive_prob": 0.01,
         "false_positive_distance": (2.0, 8.0),
+        "start_finish_false_positives": 6,
     },
 }
 

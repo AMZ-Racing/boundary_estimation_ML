@@ -22,8 +22,9 @@ class TrackAugmentation:
             "position_noise_std": 0.1,  # Standard deviation in meters (10cm default)
             "color_change_prob": 0.05,  # Probability of changing cone color
             "available_colors": ["blue", "yellow", "big_orange", "blank"],
-            "false_positive_prob": 0.05,  # Probability of adding false positive per cone
+            "false_positive_prob": 0.01,  # Probability of adding false positive per cone
             "false_positive_distance": (2.0, 8.0),  # Distance range from track (min, max) in meters
+            "start_finish_false_positives": 6,  # Number of false positives around start/finish
         }
         self.config = {**default_cfg, **(config or {})}
         self.rng = random.Random(self.config["seed"])
@@ -140,6 +141,105 @@ class TrackAugmentation:
                 "aug_y": fp_y,
                 "detected": True,  # False positives are marked as detected (visible)
             })
+        
+        # Add false positives around start/finish line
+        n_sf_fp = self.config.get("start_finish_false_positives", 0)
+        if n_sf_fp > 0:
+            # Randomize number of false positives (0 to n_sf_fp)
+            n_sf_fp = self.rng.randint(0, n_sf_fp)
+            
+        if n_sf_fp > 0:
+            # Find start/finish cones (orange/big_orange)
+            orange_cones = track_df[track_df["tag"].isin(["orange", "big_orange"])]
+            blue_cones = track_df[track_df["tag"] == "blue"]
+            yellow_cones = track_df[track_df["tag"] == "yellow"]
+            
+            if len(orange_cones) >= 2 and (len(blue_cones) > 0 or len(yellow_cones) > 0):
+                # Get first two orange cones (start line)
+                start_cones = orange_cones.iloc[:2]
+                
+                # Calculate midpoint and track direction
+                mid_x = start_cones["x"].mean()
+                mid_y = start_cones["y"].mean()
+                
+                # Find nearest blue and yellow cones to determine track direction
+                if len(blue_cones) > 0:
+                    distances_blue = np.sqrt((blue_cones["x"] - mid_x)**2 + (blue_cones["y"] - mid_y)**2)
+                    nearest_blue = blue_cones.iloc[distances_blue.argmin()]
+                else:
+                    nearest_blue = None
+                
+                if len(yellow_cones) > 0:
+                    distances_yellow = np.sqrt((yellow_cones["x"] - mid_x)**2 + (yellow_cones["y"] - mid_y)**2)
+                    nearest_yellow = yellow_cones.iloc[distances_yellow.argmin()]
+                else:
+                    nearest_yellow = None
+                
+                # Calculate track direction (tangent)
+                if nearest_blue is not None and nearest_yellow is not None:
+                    # Track direction is average of directions to nearest blue and yellow
+                    track_dx = (nearest_blue["x"] + nearest_yellow["x"]) / 2 - mid_x
+                    track_dy = (nearest_blue["y"] + nearest_yellow["y"]) / 2 - mid_y
+                elif nearest_blue is not None:
+                    track_dx = nearest_blue["x"] - mid_x
+                    track_dy = nearest_blue["y"] - mid_y
+                elif nearest_yellow is not None:
+                    track_dx = nearest_yellow["x"] - mid_x
+                    track_dy = nearest_yellow["y"] - mid_y
+                else:
+                    track_dx = 1
+                    track_dy = 0
+                
+                # Normalize track direction
+                track_length = np.sqrt(track_dx**2 + track_dy**2)
+                if track_length > 0:
+                    track_dx /= track_length
+                    track_dy /= track_length
+                
+                # Calculate perpendicular direction (normal to track)
+                # Rotate 90 degrees counterclockwise
+                normal_dx = -track_dy
+                normal_dy = track_dx
+                
+                # For each start/finish cone, add false positives
+                for _, cone in start_cones.iterrows():
+                    cone_x, cone_y = cone["x"], cone["y"]
+                    
+                    # Determine if this is left (blue) or right (yellow) side
+                    # Using cross product to determine which side
+                    to_cone_x = cone_x - mid_x
+                    to_cone_y = cone_y - mid_y
+                    cross = track_dx * to_cone_y - track_dy * to_cone_x
+                    
+                    # Generate false positives for this cone
+                    n_per_cone = n_sf_fp // 2
+                    for _ in range(n_per_cone):
+                        # Distance along normal (perpendicular to track, outward)
+                        normal_dist = self.rng.uniform(2.0, 5.0)
+                        
+                        # Distance along tangent (along track direction)
+                        tangent_dist = self.rng.uniform(-3.0, 3.0)
+                        
+                        # If on left side (cross > 0), use positive normal
+                        # If on right side (cross < 0), use negative normal
+                        if cross > 0:  # Left side (blue)
+                            fp_x = cone_x + normal_dist * normal_dx + tangent_dist * track_dx
+                            fp_y = cone_y + normal_dist * normal_dy + tangent_dist * track_dy
+                        else:  # Right side (yellow)
+                            fp_x = cone_x - normal_dist * normal_dx + tangent_dist * track_dx
+                            fp_y = cone_y - normal_dist * normal_dy + tangent_dist * track_dy
+                        
+                        fp_tag = self.rng.choice(self.config["available_colors"])
+                        
+                        false_positives.append({
+                            "tag": "false_positive",
+                            "x": fp_x,
+                            "y": fp_y,
+                            "aug_tag": fp_tag,
+                            "aug_x": fp_x,
+                            "aug_y": fp_y,
+                            "detected": True,
+                        })
         
         return false_positives
 
